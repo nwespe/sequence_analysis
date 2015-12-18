@@ -21,8 +21,8 @@ class Analysis:
             entries = line.split('\t')
             if entries[0] == 'chr_num':
                 continue  # first line
-            chr_num = entries[0]
-            position = entries[1]
+            chr_num = int(entries[0])
+            position = int(entries[1])
             snp_indel = entries[2]
             seg_percent = entries[3]
             mutation_dict[(chr_num, position)] = Mutation(chr_num, position, snp_indel, self, seg_percent)
@@ -33,10 +33,10 @@ class Analysis:
             entries = line.split('\t')
             if entries[0] == 'chr_num':
                 continue  # first line
-            chr_num = entries[0]
-            position = entries[1]
+            chr_num = int(entries[0])
+            position = int(entries[1])
             snp_indel = entries[2]
-            seg_percent = entries[3]
+            seg_percent = int(entries[3])
             if (chr_num, position) in mutation_dict:
                 mutation = mutation_dict[(chr_num, position)]  # call Mutation object
                 mutation.seg_dict[self.condition] = seg_percent
@@ -49,11 +49,11 @@ class Analysis:
             entries = line.split('\t')
             if entries[0] == 'gene_name':
                 continue  # first line
-            chr_num = entries[2]
-            position = entries[3]
+            chr_num = int(entries[2])
+            position = int(entries[3])
             ref_base = entries[6]
             read_base = entries[7]
-            clone_fraction = entries[8]
+            clone_fraction = int(entries[8])
             mutation_type = entries[10].rstrip('\n')
             gene_name = entries[0]
             mutation = mutation_dict[(chr_num, position)]
@@ -99,7 +99,7 @@ class Comparison:
             output.write('chr_num \t position \t' + '\t'.join(sample_list) + '\t snp_indel \t ref_base \t read \t '
                          'gene_1 \t mut_type_1 \t gene_2 \t mut_type_2 \t gene_3 \t mut_type_3 \n')
             for (chr_num, position), mutation in sorted(self.mutation_dict.iteritems(), key = lambda x: x[0]):
-                output.write(chr_num + '\t' + str(position) + '\t')
+                output.write(str(chr_num) + '\t' + str(position) + '\t')
                 for sample in sample_list:
                     output.write(str(mutation.seg_dict[sample]) + '\t')
                 output.write(mutation.snp_indel + '\t' + mutation.ref + '\t' + mutation.read)
@@ -178,17 +178,6 @@ class Gene:
         self.max_mut_hits = max(position_hits)
         return self.max_mut_hits
 
-    # def create_strain_dict(self, key): #strain_dict is unique to each mutation in gene_mutation_dict
-    #     strain_dict = {}
-    #     mutation_list = self.gene_mutation_dict[key]
-    #     mutation_type = mutation_list.pop(0)  # first element of list is mutation type
-    #     for sample in mutation_list: #now a list of tuples (strain, fraction), not Mutation objects
-    #         if sample.clone in strain_dict:
-    #             continue
-    #         else:
-    #             strain_dict[sample.clone] = sample.seg_dict[sample.clone]
-    #     return mutation_type, strain_dict
-
 
 def get_analysis_files(directory):  # create list of Analysis objects
     analyses = []
@@ -229,7 +218,7 @@ def create_output_files(comparison_dict, global_gene_dict, current_dir):
     # parse input files and write output file for each comparison
     for acp_trio, group in comparison_dict.iteritems():
         global_gene_dict = group.collect_mutation_info(global_gene_dict)
-        # group.write_comp_output(current_dir)
+        group.write_comp_output(current_dir)
 
     # write output file for global gene dict
 
@@ -242,7 +231,6 @@ def create_output_files(comparison_dict, global_gene_dict, current_dir):
         for name, gene in global_gene_dict.iteritems():
             gene_mut_hit_values.append(gene.get_max_mut_hits())
         max_samples = max(gene_mut_hit_values)
-        print max_samples
         i = 1
         while i <= max_samples:
             output.write('\t sample_' + str(i) + '\t fraction_' + str(i))
@@ -250,7 +238,7 @@ def create_output_files(comparison_dict, global_gene_dict, current_dir):
         output.write('\n')
 
         # sort by hits attribute of Gene object (value)
-        for (name, gene) in sorted(global_gene_dict.iteritems(), key = lambda x: x[1].hits):
+        for (name, gene) in sorted(global_gene_dict.iteritems(), key = lambda x: x[1].hits, reverse=True):
             for key, mut_sample_list in sorted(gene.gene_mutation_dict.iteritems(), key = lambda x: x[0][0]):
                 output.write(
                     str(gene.hits) + '\t' + str(len(mut_sample_list)-2) + '\t' + name + '\t' + str(gene.chr_num) +
