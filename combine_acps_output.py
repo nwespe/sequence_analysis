@@ -98,7 +98,7 @@ class Comparison:
         with open(output_filename, 'w') as output:
             output.write('chr_num \t position \t' + '\t'.join(sample_list) + '\t snp_indel \t ref_base \t read \t '
                          'gene_1 \t mut_type_1 \t gene_2 \t mut_type_2 \t gene_3 \t mut_type_3 \n')
-            for (chr_num, position), mutation in self.mutation_dict.iteritems():
+            for (chr_num, position), mutation in sorted(self.mutation_dict.iteritems(), key = lambda x: x[0]):
                 output.write(chr_num + '\t' + str(position) + '\t')
                 for sample in sample_list:
                     output.write(str(mutation.seg_dict[sample]) + '\t')
@@ -139,9 +139,10 @@ class Mutation:
             self.gene_dict[gene] = mutation_type
 
 
-
 class Gene:
     """ called by parse_gene_file to create and add to global_gene_dict for summary output
+        issue: only want to add strain info for clones, not pools
+        currently have one Mutation object per analysis, not per clone
     """
 
     def __init__(self, name, chr_num, mutation):
@@ -151,33 +152,42 @@ class Gene:
         self.num_mutations = 1
         self.max_mut_hits = 1
         self.chr_num = chr_num
-        self.gene_mutation_dict[(mutation.position, mutation.read)] = [mutation.gene_dict[self.name], mutation]
-        # add mutation type and first Mutation
-        self.strain_dict = {}
+        self.gene_mutation_dict[(mutation.position, mutation.ref, mutation.read)] = \
+            [mutation.mut_sum, mutation.gene_dict[self.name], (mutation.clone, mutation.seg_dict[mutation.clone])]
+        # add mut_sum, mutation type and first mutation - only add clone name and fraction value
 
     def add_mutation(self, mutation):
-        self.hits += 1
-        if (mutation.position, mutation.read) in self.gene_mutation_dict:
-            self.gene_mutation_dict[(mutation.position, mutation.read)].append(mutation)
-            # check mutation type and update in gene_mutation_dict if necessary
+        key = (mutation.position, mutation.ref, mutation.read)
+        if key in self.gene_mutation_dict:
+            if (mutation.clone, mutation.seg_dict[mutation.clone]) not in self.gene_mutation_dict[key]:
+                self.gene_mutation_dict[key].append((mutation.clone, mutation.seg_dict[mutation.clone]))
+                self.hits += 1
+            # check mutation type and update in gene_mutation_dict if not nonsegregating
             if mutation.gene_dict[self.name] != 'nonsegregating':
-                self.gene_mutation_dict[(mutation.position, mutation.read)][0] = mutation.gene_dict[self.name]
+                self.gene_mutation_dict[key][1] = mutation.gene_dict[self.name]
         else:
-            self.gene_mutation_dict[(mutation.position, mutation.read)] = [mutation.gene_dict[self.name], mutation]
+            self.gene_mutation_dict[key] = [mutation.mut_sum, mutation.gene_dict[self.name],
+                                            (mutation.clone, mutation.seg_dict[mutation.clone])]
             self.num_mutations += 1
+            self.hits += 1
 
     def get_max_mut_hits(self):
-        return max(len(v) for k, v in self.gene_mutation_dict.iteritems())
+        position_hits = []
+        for key, value in self.gene_mutation_dict.iteritems():
+            position_hits.append(len(value))
+        self.max_mut_hits = max(position_hits)
+        return self.max_mut_hits
 
-    def create_strain_dict(self, key): #strain_dict is unique to each mutation in gene_mutation_dict
-        mutation_list = self.gene_mutation_dict[key]
-        mutation_type = mutation_list.pop[0]  # first element of list is mutation type
-        for sample in mutation_list:
-            if sample.clone in self.strain_dict:
-                continue
-            else:
-                self.strain_dict[sample.clone] = sample.seg_dict[sample.clone]
-        return mutation_type, self.strain_dict
+    # def create_strain_dict(self, key): #strain_dict is unique to each mutation in gene_mutation_dict
+    #     strain_dict = {}
+    #     mutation_list = self.gene_mutation_dict[key]
+    #     mutation_type = mutation_list.pop(0)  # first element of list is mutation type
+    #     for sample in mutation_list: #now a list of tuples (strain, fraction), not Mutation objects
+    #         if sample.clone in strain_dict:
+    #             continue
+    #         else:
+    #             strain_dict[sample.clone] = sample.seg_dict[sample.clone]
+    #     return mutation_type, strain_dict
 
 
 def get_analysis_files(directory):  # create list of Analysis objects
@@ -219,7 +229,7 @@ def create_output_files(comparison_dict, global_gene_dict, current_dir):
     # parse input files and write output file for each comparison
     for acp_trio, group in comparison_dict.iteritems():
         global_gene_dict = group.collect_mutation_info(global_gene_dict)
-        group.write_comp_output(current_dir)
+        # group.write_comp_output(current_dir)
 
     # write output file for global gene dict
 
@@ -228,21 +238,25 @@ def create_output_files(comparison_dict, global_gene_dict, current_dir):
 
         # need to add enough column headings for max # of samples with same mutation
         # (i.e. # of entries in gene_mutation_dict for a given (position, read)
-        max_samples = max(gene.get_max_mut_hits for name, gene in global_gene_dict.iteritems())
+        gene_mut_hit_values = []
+        for name, gene in global_gene_dict.iteritems():
+            gene_mut_hit_values.append(gene.get_max_mut_hits())
+        max_samples = max(gene_mut_hit_values)
+        print max_samples
         i = 1
         while i <= max_samples:
             output.write('\t sample_' + str(i) + '\t fraction_' + str(i))
             i += 1
         output.write('\n')
 
-        for name, gene in global_gene_dict.iteritems():
-            for (position, read), mut_sample_list in gene.gene_mutation_dict.iteritems():
-                mutation_type, strain_dict = gene.create_strain_dict((position, read))
+        # sort by hits attribute of Gene object (value)
+        for (name, gene) in sorted(global_gene_dict.iteritems(), key = lambda x: x[1].hits):
+            for key, mut_sample_list in sorted(gene.gene_mutation_dict.iteritems(), key = lambda x: x[0][0]):
                 output.write(
-                    str(gene.hits) + '\t' + str(len(mut_sample_list)) + '\t' + name + '\t' + str(gene.chr_num) + '\t' +
-                    str(position) + '\t' + mut_sample_list[0].mut_sum + '\t' + mutation_type)
-                # last part is mutation_type
-                for strain, fraction in strain_dict.iteritems():
+                    str(gene.hits) + '\t' + str(len(mut_sample_list)-2) + '\t' + name + '\t' + str(gene.chr_num) +
+                    '\t' + str(key[0]) + '\t' + mut_sample_list[0] + '\t' + mut_sample_list[1])
+                # key[0] = position, last two entries are mut_sum and mutation_type
+                for (strain, fraction) in sorted(mut_sample_list[2:], key = lambda x: x[0]):
                     output.write('\t' + strain + '\t' + str(fraction))
                 output.write('\n')
 
