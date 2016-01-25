@@ -1,0 +1,434 @@
+#! /bin/bash
+
+# segtools
+# Tools to find mutations between a set of samples. This was written to be
+# used to analyze experimentally evolved and backcrossed yeast strains.
+# Author: John Koschwanez
+#
+# Please see the README file on my github site for better documentation.
+# https://github.com/koschwanez/mutantanalysis
+
+# This version modified by Nichole Collins to add varscan-only routines 2015-02
+# This version modified by Nichole (Collins) Wespe to add cutadapt, fastqc, and clipOverlap functions
+# N.B. the cutadapt (adapter trimming) is specific for Nextera library prep
+# to pileup formation, and to change the bwa aligner to bwa mem 2016-01
+
+usage()
+{
+    echo "Usage: $PROGRAM singlef2p -a sampleR1 -c sample_name [-g GATK_path] [-h help] -r reference.fasta"
+    echo "Usage: $PROGRAM pairedf2p -a sampleR1 -b sampleR2 -c sample_name [-g GATK_path] [-h help] -r reference.fasta"
+    echo "Usage: $PROGRAM acps -a ancestorR1 [-b ancestorR2] [-c ancestor_name] -d cloneR1 [-e cloneR2] [-f clone_name] [-g GATK_path] [-h help] -i poolR1 [-j poolR2] [-k pool_name] -r reference.fasta -s reference_features [-t analysis_title]"
+    echo "Usage: $PROGRAM varscan_pair ancestor_pileup clone_pileup comparison_name"
+    echo "Usage: $PROGRAM varscan_pool pool_pileup pool_name output_directory"
+}
+
+usage_and_exit()
+{
+    usage
+    exit $1
+}
+
+checkfastqsample()
+{
+    sample_ext=$(echo $1 |awk -F . '{if (NF>1) {print $NF}}')
+
+    if ! [ -f "$1" ]
+    then
+        echo "$2 required"
+        usage
+        exit 1
+    fi
+
+    if ! [ "X$sample_ext" = "Xfq" ] && ! [ "X$sample_ext" = "Xfastq" ]
+    then
+        echo "$2 must have fq or fastq extension"
+        usage
+        exit 1
+    fi
+
+    return 1
+}
+
+checkname()
+{
+    if ! [ $1 ]
+    then
+        echo "$2 required"
+        usage
+        exit 1
+    fi
+
+    return 1
+}
+
+checkref()
+{
+    sample_ext=$(echo $1 |awk -F . '{if (NF>1) {print $NF}}')
+
+    if ! [ -f "$1" ]
+    then
+        echo "reference fasta file required with option -r"
+        exit 1
+    fi
+
+    if ! [ "X$sample_ext" = "Xfa" ] && ! [ "X$sample_ext" = "Xfasta" ]
+    then
+        echo "reference file must have fa or fasta extension"
+        exit 1
+    fi
+
+    if ! [ -f "$1.bwt" ]
+    then
+        echo "Now constructing missing reference index for bwa."
+        bwa index $1
+    fi
+
+    return 1
+}
+
+single_fastq2pileup ()
+{
+    # $1 is the sample,
+    # $2 is the name to be used as the base filename
+    # $3 is the ref sequence
+    # $4 is GATK
+
+    checkfastqsample "$1" "alignment sample"
+    checkname "$2" "sample name"
+    checkref "$3"
+
+    echo "now trimming adapter sequences from reads"
+    cutadapt -a CTGTCTCTTATACACATCT \
+        -o $2_trimmed.fastq \
+        --info-file $2_cutadapt_report.txt $1
+    
+    echo "now generating new FASTQC report for trimmed reads"
+    fastqc $2_trimmed.fastq
+
+    echo "now aligning $1 to generate $2.sorted.bam"
+    bwa mem
+        -R '@RG\tID:'$3'\tSM:'$3'\tPL:ILLUMINA' \
+        $3 $1 |\
+    samtools view -Shu - | \
+    samtools sort - $2.sorted
+    samtools index $2.sorted.bam
+
+    echo "now running GATK on $2"
+    java -Xmx2g -jar $4 \
+        -I $2.sorted.bam \
+        -R $3 \
+        -T RealignerTargetCreator \
+        -o $2.intervals
+    java -Xmx2g -jar $4 \
+        -I $2.sorted.bam \
+        -R $3 \
+        -T IndelRealigner \
+        -targetIntervals $2.intervals \
+        -o $2.final.bam
+    samtools index $2.final.bam
+
+    echo "Now creating pileup for $2"
+    samtools mpileup \
+        -B \
+        -f $3 \
+        $2.final.bam > $2.pileup
+
+    return 1
+}
+
+paired_fastq2pileup ()
+{
+    # $1 is the sample first pair,
+    # $2 is the sample second pair,
+    # $3 is the name to be used as the base filename
+    # $4 is the ref sequence
+    # $5 is GATK
+
+    checkfastqsample "$1" "alignment sample R1"
+    checkfastqsample "$2" "alignment sample R2"
+    checkname "$3" "sample name"
+    checkref "$4"
+
+    echo "Now trimming adapter sequences from reads $1 and $2"
+    cutadapt -a CTGTCTCTTATACACATCT -A CTGTCTCTTATACACATCT \
+        -o $3_trimmed_R1.fastq -p $3_trimmed_R2.fastq \
+        --info-file $3_cutadapt_report.txt $1 $2
+
+    echo "Now generating new FASTQC report for trimmed reads"
+    fastqc $3_trimmed_R1.fastq $3_trimmed_R2.fastq
+
+    echo "Now aligning trimmed reads to generate $3.sorted.bam"
+    bwa mem \
+        -R '@RG\tID:'$3'\tSM:'$3'\tPL:ILLUMINA' \
+        $4 \
+	    $3_trimmed_R1.fastq $3_trimmed_R2.fastq | \
+    samtools view -Shu - | \
+    samtools sort - $3.sorted
+    samtools index $3.sorted.bam
+
+    echo "Now running GATK on $3 to generate $3.real.bam"
+    java -Xmx2g -jar $5 \
+        -I $3.sorted.bam \
+        -R $4 \
+        -T RealignerTargetCreator \
+        -o $3.intervals
+    java -Xmx2g -jar $5 \
+        -I $3.sorted.bam \
+        -R $4 \
+        -T IndelRealigner \
+        -targetIntervals $3.intervals \
+        -o $3.real.bam
+    samtools index $3.real.bam
+
+    echo "Now removing overlapping bases from alignment"
+    bam clipOverlap \
+	--in $3.real.bam \
+	--out $3.final.bam \
+	--stats
+    samtools index $3.final.bam
+
+    echo "Now creating pileup for $3"
+    samtools mpileup \
+        -A -B \
+        -f $4 \
+        $3.final.bam > $3.pileup
+
+    return 1
+}
+
+single_or_paired() {
+    # $1 is first pair
+    # $2 is second pair
+    # $3 is description of pair
+    if [ -f "$1" ] && ! [ -f "$2" ]
+    then
+        echo "Single end $3 $1"
+        return 1
+    elif [ -f "$1" ] && [ -f "$2" ]
+    then
+        echo "Paired end $3 $1 and $2"
+        return 2
+    else
+        echo "Must include $3 files"
+        exit 1
+    fi
+}
+
+PROGRAM=`basename $0`
+PROGRAMDIR=`dirname $0`
+VERSION=0.1
+
+case $1 in
+    acps) routine="acps"
+        ;;
+    singlef2p) routine="singlef2p"
+        ;;
+    pairedf2p) routine="pairedf2p"
+        ;;
+    copynumber) routine="varscan_copynumber"
+        ;;
+    varscan_pair) routine="varscan_pair"
+	;;
+    varscan_pool) routine="varscan_pool"
+	;;
+esac
+shift
+
+while getopts :a:b:c:d:e:f:g:hi:j:k:o:r:s:t:v: opt
+do
+    case $opt in
+        a) ancestorR1=$OPTARG
+            ;;
+        b) ancestorR2=$OPTARG
+            ;;
+        c) ancestor_name=$OPTARG
+            ;;
+        d) cloneR1=$OPTARG
+            ;;
+        e) cloneR2=$OPTARG
+            ;;
+        f) clone_name=$OPTARG
+            ;;
+        g) gatk=$OPTARG
+            ;;
+        h) usage_and_exit
+            ;;
+        i) poolR1=$OPTARG
+            ;;
+        j) poolR2=$OPTARG
+            ;;
+        k) pool_name=$OPTARG
+            ;;
+        o) output_directory=$OPTARG
+            ;;
+        r) refseq=$OPTARG
+            ;;
+        s) reffeat=$OPTARG
+            ;;
+        t) anal_title=$OPTARG
+            ;;
+        v) varscan=$OPTARG
+            ;;
+        '?') echo "$0: invalid option -$optarg" >&2
+            exit 1
+            ;;
+    esac
+done
+shift $((OPTIND - 1))
+
+command -v samtools >/dev/null 2>&1 || \
+    { echo >&2 "samtools must be in environmental path" >&2; exit 1; }
+command -v bwa >/dev/null 2>&1 || \
+    { echo >&2 "bwa must be in environmental path" >&2; exit 1; }
+
+if ! [ ${gatk:=$GATK} ]
+then
+    echo "gatk needs to be defined with option -g"
+    exit 1
+fi
+
+case $routine in
+    acps) echo "ancestor clone pool segregant analysis"
+        echo ${ancestor_name:="ancestor"} > /dev/null
+        echo ${clone_name:="clone"} > /dev/null
+        echo ${pool_name:="pool"} > /dev/null
+        echo ${anal_title:="pool"} > /dev/null
+        echo ${output_directory:="seg_output"} > /dev/null
+
+        if ! [ ${varscan:=$VARSCAN} ]
+        then
+            echo "varscan location needs to be defined with option -v"
+            exit 1
+        fi
+
+        if ! [ -s "$reffeat" ]
+        then
+            echo "Reference feature file needs to be defined with option -s"
+        fi
+
+        single_or_paired "$ancestorR1" "$ancestorR2" "ancestor"
+        ancestor_single1_paired2=$?
+        single_or_paired "$cloneR1" "$cloneR2" "clone"
+        clone_single1_paired2=$?
+        single_or_paired "$poolR1" "$poolR2" "pool"
+        pool_single1_paired2=$?
+
+        if [ $ancestor_single1_paired2 == 1 ]
+        then
+            single_fastq2pileup \
+                $ancestorR1 $ancestor_name $refseq $gatk
+        elif [ $ancestor_single1_paired2 == 2 ]
+        then
+            paired_fastq2pileup \
+                $ancestorR1 $ancestorR2 $ancestor_name $refseq $gatk
+        fi
+
+        if [ $clone_single1_paired2 == 1 ]
+        then
+            single_fastq2pileup \
+                $cloneR1 $clone_name $refseq $gatk
+        elif [ $clone_single1_paired2 == 2 ]
+        then
+            paired_fastq2pileup \
+                $cloneR1 $cloneR2 $clone_name $refseq $gatk
+        fi
+
+        if [ $pool_single1_paired2 == 1 ]
+        then
+            single_fastq2pileup \
+                $poolR1 $pool_name $refseq $gatk
+        elif [ $pool_single1_paired2 == 2 ]
+        then
+            paired_fastq2pileup \
+                $poolR1 $poolR2 $pool_name $refseq $gatk
+        fi
+
+        java -jar $varscan somatic \
+            $ancestor_name.pileup $clone_name.pileup $clone_name \
+            --p-value 0.05
+
+        java -jar $varscan pileup2snp $pool_name.pileup \
+            --min-coverage 4 --min-reads2 2 --min-var-freq 0.05 --p-value 0.5 \
+            > $pool_name.snp
+
+        java -jar $varscan pileup2indel $pool_name.pileup \
+            --min-coverage 4 --min-reads2 2 --min-var-freq 0.05 --p-value 0.5 \
+            > $pool_name.indel
+
+        if [! -d $output_directory ]; then
+            mkdir $output_directory
+        fi
+
+        python $PROGRAMDIR/mutantanalysis.py \
+            --title $anal_title \
+            --output_dir $output_directory \
+            --ref_seq $refseq \
+            --ref_feat $reffeat \
+            --ref_chrom_num $refseq.chrom \
+            --ancestor_bam $ancestor_name.bam \
+            --ancestor_name $ancestor_name \
+            --clone_bam $clone_name.bam \
+            --clone_snp $clone_name.snp \
+            --clone_indel $clone_name.indel \
+            --clone_name $clone_name \
+            --pool_bam $pool_name.bam \
+            --pool_snp $pool_name.snp \
+            --pool_indel $pool_name.indel
+
+        rm $ancestor_name.sorted* $ancestor_name.intervals
+        rm $clone_name.sorted* $clone_name.intervals
+        rm $pool_name.sorted* $pool_name.intervals
+        ;;
+
+    singlef2p) single_fastq2pileup \
+            $ancestorR1 $ancestor_name $refseq $gatk
+        ;;
+    pairedf2p) paired_fastq2pileup \
+            $ancestorR1 $ancestorR2 $ancestor_name $refseq $gatk
+        ;;
+    varscan_pair) 
+	if ! [ ${varscan:=$VARSCAN} ]
+        then
+            echo "varscan location needs to be defined with option -v"
+            exit 1
+        fi
+
+        java -jar $varscan somatic \
+            $1 $2 $3 \
+            --min-coverage 4 --p-value 0.05
+        ;;
+    varscan_copynumber)
+        if ! [ ${varscan:=$VARSCAN} ]
+        then
+            echo "varscan location needs to be defined with option -v"
+            exit 1
+        fi
+
+        java -jar $varscan copynumber \
+            $1 $2 $3 
+	;;
+    varscan_pool) 
+	if ! [ ${varscan:=$VARSCAN} ]
+        then
+            echo "varscan location needs to be defined with option -v"
+            exit 1
+        fi
+
+        java -jar $varscan pileup2snp $1 \
+            --min-coverage 4 --min-reads2 2 --min-var-freq 0.05 --p-value 0.5 \
+            > $3/$2.snp
+
+        java -jar $varscan pileup2indel $1 \
+            --min-coverage 4 --min-reads2 2 --min-var-freq 0.05 --p-value 0.5 \
+            > $3/$2.indel
+	;;
+    *) echo "A routine is required"
+        usage
+        exit 1
+        ;;
+esac
+exit 0
+
+
+
+
