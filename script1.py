@@ -19,21 +19,15 @@ import argparse
 
 script_directory = os.path.dirname(sys.argv[0])
 
-parser = argparse.ArgumentParser(description = "Specify % to call mutations and segregants using -m and -s options")
+parser = argparse.ArgumentParser(description = "Tell me where to find fastq files, where to put the output files, and what samples to align.")
 parser.add_argument('-i', '--fastq', required=True, help='Full path of directory containing fastq files. Files can be in subdirectories of this directory.')
-parser.add_argument('-o', '--directory', required=True, help='Full path of directory for file creation and analysis output.')
-parser.add_argument('-f', '--csv_file', required=True, help='Full path to csv file containing desired comparisons and names of ancestors, clones, pools. See sample documents for formatting.')
-parser.add_argument('-m', '--mutation_percent', type=int, default=90, help='Percent of reads required for mutation in clone to be called true. Default is 90; recommend 40 for diploids.')
-parser.add_argument('-s', '--segregation_percent', type=int, default=70, help='Percent of reads required for mutation in pool to be called segregating. Default is 70.')
+parser.add_argument('-d', '--directory', required=True, help='Full path of directory for file output.')
+parser.add_argument('-f', '--csv_file', required=True, help='Full path to csv file containing names of ancestors, clones, and/or pools. See example documents for formatting.')
 args = parser.parse_args()
 
 fastq_directory = args.fastq
 directory = args.directory
 csv_file = args.csv_file
-mut_percent = args.mutation_percent
-seg_percent = args.segregation_percent
-directory = sys.argv[1]
-csv_file = sys.argv[2]
 
 
 def input_eval(directory, csv_file):
