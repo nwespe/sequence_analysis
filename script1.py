@@ -30,15 +30,26 @@ directory = args.directory
 csv_file = args.csv_file
 
 
-def input_eval(directory, csv_file):
+def input_eval(fastq_directory, directory, csv_file):
     
     """ Determine if inputs are a directory and a readable csv file
     """
+    try:
+	os.path.isdir(fastq_directory)
+    except:
+        print directory + " is not a directory"
+        sys.exit(1)
+
     try:
         os.path.isdir(directory)
     except:
         print directory + " is not a directory"
         sys.exit(1)
+
+    if fastq_directory == directory:
+        print 'Will not output to same directory as fastq files. Please specify a different directory.'
+        sys.exit(1)
+
 ##    try:
 ##        csv_open = open(csv_file, 'rU')
 ##        csv_reader = csv.reader(csv_open)
@@ -245,7 +256,7 @@ def main(): # run analyses of fastq files using functions defined above
     # set default exit statuses
     pileup_status_single = 0; pileup_status_pairs = 0
     
-    input_eval(directory, csv_file) # check input
+    input_eval(fastq_directory, directory, csv_file) # check input
     individual_samples, ancestor_clone_pairs, anc_mult_clone_groups, set_of_pools, acp_trios, pipeline = read_csv_file(csv_file)
 
     # empty sets or lists initialized above evaluate to False; if any have members created by previous function, "if" statement below is True and dependent function is executed

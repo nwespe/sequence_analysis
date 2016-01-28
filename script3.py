@@ -20,15 +20,21 @@ import argparse
 script_directory = os.path.dirname(sys.argv[0])
 
 parser = argparse.ArgumentParser(description = "Tell me where to find bam and varscan files, where to put the analysis files, and what samples to compare.")
-parser.add_argument('-i', '--input_files', required=True, help='Full path of directory containing bam and varscan files. Files can be in subdirectories of this directory.')
-parser.add_argument('-d', '--directory', required=True, help='Full path of directory for analysis output.')
+parser.add_argument('-b', '--bam_files', required=True, help='Full path of directory containing bam files. Files can be in subdirectories of this directory.')
+parser.add_argument('-v', '--varscan_files', default='same', help='Full path of directory containing varscan files. Files can be in subdirectories of this directory. If omitted, varscan file directory is same as bam file directory.')
+parser.add_argument('-d', '--directory', default='same', help='Full path of directory for analysis output. If omitted, output directory is same as input directory.')
 parser.add_argument('-f', '--csv_file', required=True, help='Full path to csv file containing desired comparisons and names of ancestors, clones, pools. See sample documents for formatting.')
 parser.add_argument('-m', '--mutation_percent', type=int, default=90, help='Percent of reads required for mutation in clone to be called true. Default is 90; recommend 30 for diploids.')
 parser.add_argument('-s', '--segregation_percent', type=int, default=70, help='Percent of reads required for mutation in pool to be called segregating. Default is 70.')
 args = parser.parse_args()
 
-input_dir = args.input_files
+bam_directory = args.bam_files
+varscan_directory = args.varscan_files
+if varscan_directory == 'same':
+    varscan_directory = bam_directory
 directory = args.directory
+if directory == 'same':
+    directory = bam_directory
 csv_file = args.csv_file
 mut_percent = args.mutation_percent
 seg_percent = args.segregation_percent
@@ -49,8 +55,6 @@ def input_eval():
 ##    except:
 ##        print csv_file + " is not readable csv file."
 ##        return 1
-        
-    print "Now working on files in " + directory
 
 
 def read_csv_file():
@@ -134,7 +138,7 @@ def find_snp_indel(pairs, pools):
     # find all snp and indel files in directory tree:
     indel_files = []
     snp_files = []
-    for r, d, f in os.walk(input_dir):
+    for r, d, f in os.walk(varscan_directory):
         for item in f:
             if fnmatch.fnmatch(item, '*.indel'):
                 indel_files.append(os.path.abspath(os.path.join(r, item)))
@@ -204,7 +208,7 @@ def mutant_analysis(pipeline, snp_indel_dict, pairs, mult_clone_groups, pools, t
     # find bam files
     # TODO: add checks for sample bam files - make sure there is only 1 per sample
     bam_files = []
-    for r, d, f in os.walk(input_dir):
+    for r, d, f in os.walk(bam_directory):
         for item in f:
             if fnmatch.fnmatch(item, '*final.bam'):
                 bam_files.append(os.path.abspath(os.path.join(r, item)))

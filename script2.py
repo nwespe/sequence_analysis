@@ -21,12 +21,14 @@ script_directory = os.path.dirname(sys.argv[0])
 
 parser = argparse.ArgumentParser(description = "Tell me where to find pileup files, where to put the varscan files, and what samples to compare.")
 parser.add_argument('-i', '--pileup', required=True, help='Full path of directory containing pileup files. Files can be in subdirectories of this directory.')
-parser.add_argument('-d', '--directory', required=True, help='Full path of directory for file output.')
+parser.add_argument('-d', '--directory', default='same', help='Full path of directory for file output. If omitted, output directory is same as pileup directory.')
 parser.add_argument('-f', '--csv_file', required=True, help='Full path to csv file containing names of ancestors, clones, and/or pools. See example documents for formatting.')
 args = parser.parse_args()
 
 pileup_directory = args.pileup
 directory = args.directory
+if directory == 'same':
+    directory = pileup_directory
 csv_file = args.csv_file
 
 
