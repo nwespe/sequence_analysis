@@ -1,2 +1,4 @@
 Ancestor,Clone,Pool 1,Pool 2,Pool 3
 028A,033B,119_Initial,119_NaCl_HU,119_YPD
+028A,034A,152A_Initial,152A_NaCl_HU,152A_YPD
+028A,035C,121_Initial,121_NaCl_HU,121_YPD

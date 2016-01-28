@@ -21,7 +21,7 @@ script_directory = os.path.dirname(sys.argv[0])
 
 parser = argparse.ArgumentParser(description = "Tell me where to find fastq files, where to put the output files, and what samples to align.")
 parser.add_argument('-i', '--fastq', required=True, help='Full path of directory containing fastq files. Files can be in subdirectories of this directory.')
-parser.add_argument('-d', '--directory', required=True, help='Full path of directory for file output.')
+parser.add_argument('-d', '--directory', required=True, help='Full path of directory for file output. Must be different from fastq directory.')
 parser.add_argument('-f', '--csv_file', required=True, help='Full path to csv file containing names of ancestors, clones, and/or pools. See example documents for formatting.')
 args = parser.parse_args()
 
@@ -104,11 +104,14 @@ def read_csv_file(csv_file):
             individual_samples.add(ancestor)
             list_of_clones = []
             for c in clone_indices:
-                clone = row[c]
-                if clone:
-                    individual_samples.add(clone)
-                    ancestor_clone_pairs.add((ancestor, clone))
-                    list_of_clones.append(clone)
+                try:
+                    clone = row[c]
+                    if clone:
+                        individual_samples.add(clone)
+                        ancestor_clone_pairs.add((ancestor, clone))
+                        list_of_clones.append(clone)
+                except IndexError: # no more clones in row
+                    break
             anc_mult_clone_groups.append((ancestor, list_of_clones))
     elif len(clone_indices) == 1 and pool_indices: # one clone column and pools
         pipeline = "sawc"
@@ -120,11 +123,15 @@ def read_csv_file(csv_file):
             individual_samples.add(clone)
             ancestor_clone_pairs.add((ancestor, clone))
             for p in pool_indices:
-                pool = row[p]
-                if pool:
-                    individual_samples.add(pool)
-                    set_of_pools.add(pool)
-                    acp_trios.add((ancestor, clone, pool))
+                try:
+                    pool = row[p]
+                    if pool:
+                        individual_samples.add(pool)
+                        set_of_pools.add(pool)
+                        acp_trios.add((ancestor, clone, pool))
+                except IndexError: # no more pools in row
+                    break
+    else: print "Please check csv file and format for either multi-clone comparisons or ancestor-clone-pool trio comparisons."
 
     print "Received directions to analyze " + str(len(individual_samples)) + \
           " unique samples, " + str(len(ancestor_clone_pairs)) + " anc-clone pairs, " \

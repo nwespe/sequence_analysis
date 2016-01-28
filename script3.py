@@ -100,11 +100,14 @@ def read_csv_file():
             individual_samples.add(ancestor)
             list_of_clones = []
             for c in clone_indices:
-                clone = row[c]
-                if clone:
-                    individual_samples.add(clone)
-                    ancestor_clone_pairs.add((ancestor, clone))
-                    list_of_clones.append(clone)
+                try:
+                    clone = row[c]
+                    if clone:
+                        individual_samples.add(clone)
+                        ancestor_clone_pairs.add((ancestor, clone))
+                        list_of_clones.append(clone)
+                except IndexError: # no more clones in row
+                    break
             anc_mult_clone_groups.append((ancestor, list_of_clones))
     elif len(clone_indices) == 1 and pool_indices: # one clone column and pools
         pipeline = "sawc"
@@ -116,11 +119,14 @@ def read_csv_file():
             individual_samples.add(clone)
             ancestor_clone_pairs.add((ancestor, clone))
             for p in pool_indices:
-                pool = row[p]
-                if pool:
-                    individual_samples.add(pool)
-                    set_of_pools.add(pool)
-                    acp_trios.add((ancestor, clone, pool))
+                try:
+                    pool = row[p]
+                    if pool:
+                        individual_samples.add(pool)
+                        set_of_pools.add(pool)
+                        acp_trios.add((ancestor, clone, pool))
+                except IndexError: # no more pools in row
+                    break
     else: print "Please check csv file and format for either multi-clone comparisons or ancestor-clone-pool trio comparisons." 
 
     print "Received directions to analyze " + str(len(individual_samples)) + \
