@@ -1,0 +1,37 @@
+# picardtools report
+Scripts for running picard tools
+
+by Nichole Wespe
+
+This is a suite of scripts I wrote for executing picard-tools commands in high throughput on the Harvard Odyssey cluster
+(SLURM) and compiling the results for several samples into one report.
+
+1) picard_align_report.py: This script finds bam files for the samples listed in a provided csv file and creates a report for
+each sample using the picard command CollectAlignmentSummaryMetrics. Each output file, named <sample>_asm.txt, is placed
+into the same location as the bam file. User input is a directory where the data files are present and a csv file
+describing samples to be analyzed.
+
+This script first checks whether the files it will create already exist and whether the input files it
+needs are in the directory provided. If the script executes successfully, it ends with the option to have an email
+notification sent using the email_notification.sh script. To use this, copy the email_notification.sh script from the
+common directory to your own directory, open the script and change the email address in line 8 to your own. Take note of
+the full path to your email script.
+
+input: python /full/path/to/picard_align_report.py
+        -d /your/path/to/bam_files
+        -f /your/path/to/csv_file.csv
+
+output: /your/path/to/bam_files/sample_bam_location/sample_asm.txt
+
+The picard_align_report.py script calls the picard_report.sh script located in the array_scripts folder.
+
+
+2) compile_report.py: This script generates a single report on alignment statistics for many bam files using data
+collected by picard command CollectAlignmentSummaryMetrics. User input is a directory where the <sample>_asm.txt metrics
+files are present and a csv file describing samples to be analyzed. Note that this is the same as for picard_align_report.py
+
+input: python /full/path/to/picard_align_report.py
+        -d /your/path/to/asm_files
+        -f /your/path/to/csv_file.csv
+
+output: /your/path/to/asm_files/<csv_file>_alignment_data.txt
